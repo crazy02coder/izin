@@ -8,6 +8,14 @@ class LoginIn(BaseModel):
     password: str
 
 
+class AdministrativeRoleOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    role_type: str
+    faculty_id: int | None = None
+    department_id: int | None = None
+    is_active: bool
+
+
 class UserOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
     id: int
@@ -21,6 +29,7 @@ class UserOut(BaseModel):
     profile_photo_url: str | None = None
     is_active: bool
     must_change_password: bool
+    administrative_roles: list[AdministrativeRoleOut] = []
 
 
 class LeaveCreate(BaseModel):
@@ -44,6 +53,22 @@ class LeaveOut(BaseModel):
     approved_at: datetime | None = None
     rejected_at: datetime | None = None
     rejection_reason: str | None = None
+    approval_steps: list["ApprovalStepOut"] = []
+
+
+class ApprovalStepOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: int
+    step_order: int
+    step_type: str
+    required_role: str
+    assigned_user_id: int | None = None
+    status: str
+    comment: str | None = None
+    acted_at: datetime | None = None
+
+
+LeaveOut.model_rebuild()
 
 
 class RejectIn(BaseModel):

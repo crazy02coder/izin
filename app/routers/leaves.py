@@ -7,10 +7,10 @@ from app.dependencies import current_user
 from app.models import LeaveRequest, LeaveStatus, LeaveBalance, AuditLog, User
 from app.schemas import LeaveCreate, LeaveOut, RejectIn
 from app.services.leave_service import working_days, has_overlap
-from app.services.hierarchy_service import HierarchyService
+from app.services.leave_workflow_service import LeaveWorkflowService
 
 router = APIRouter(prefix="/api/leaves", tags=["leaves"])
-hs = HierarchyService()
+workflow = LeaveWorkflowService()
 
 
 def balance(db, user, year):
@@ -43,8 +43,7 @@ def create(data: LeaveCreate, db: Session = Depends(get_db), user=Depends(curren
     b = balance(db, user, data.start_date.year)
     if b.remaining_days < days:
         raise HTTPException(400, "Kalan izin bakiyesi yetersiz")
-    approver = hs.approver(db, user)
-    status = LeaveStatus.AUTO_APPROVED if user.system_role == "RECTOR" else LeaveStatus.PENDING
+    status = LeaveStatus.PENDING
     leave = LeaveRequest(
         user_id=user.id,
         leave_type=data.leave_type.value,
@@ -53,15 +52,11 @@ def create(data: LeaveCreate, db: Session = Depends(get_db), user=Depends(curren
         working_days=days,
         reason=data.reason,
         status=status,
-        approver_id=approver.id if approver else None,
     )
-    if status == LeaveStatus.AUTO_APPROVED:
-        leave.approved_at = datetime.utcnow()
-        b.used_days += days
-    else:
-        b.reserved_days += days
     db.add(leave)
     db.flush()
+    leave.approval_steps = workflow.build_workflow(db, user, data.leave_type)
+    b.reserved_days += days
     db.add(
         AuditLog(
             actor_user_id=user.id, action="LEAVE_CREATED", entity_type="LEAVE", entity_id=leave.id
@@ -74,25 +69,20 @@ def create(data: LeaveCreate, db: Session = Depends(get_db), user=Depends(curren
 
 @router.get("/pending-approvals", response_model=list[LeaveOut])
 def pending(db: Session = Depends(get_db), user=Depends(current_user)):
-    return list(
-        db.scalars(
-            select(LeaveRequest)
-            .where(LeaveRequest.approver_id == user.id, LeaveRequest.status == "PENDING")
-            .order_by(LeaveRequest.start_date)
-        )
-    )
+    return workflow.pending_for_user(db, user)
 
 
 @router.post("/{leave_id}/approve", response_model=LeaveOut)
 def approve(leave_id: int, db: Session = Depends(get_db), user=Depends(current_user)):
     leave = db.get(LeaveRequest, leave_id)
-    if not leave or not hs.can_act_on_leave(db, user, leave):
-        raise HTTPException(403, "Bu talebi onaylama yetkiniz yok")
-    b = balance(db, db.get(User, leave.user_id), leave.start_date.year)
-    b.reserved_days = max(0, b.reserved_days - leave.working_days)
-    b.used_days += leave.working_days
-    leave.status = "APPROVED"
-    leave.approved_at = datetime.utcnow()
+    if not leave:
+        raise HTTPException(404, "İzin talebi bulunamadı")
+    was_final = leave.status == LeaveStatus.APPROVED
+    workflow.approve_step(db, leave, user)
+    if not was_final and leave.status == LeaveStatus.APPROVED:
+        b = balance(db, db.get(User, leave.user_id), leave.start_date.year)
+        b.reserved_days = max(0, b.reserved_days - leave.working_days)
+        b.used_days += leave.working_days
     db.add(
         AuditLog(
             actor_user_id=user.id, action="LEAVE_APPROVED", entity_type="LEAVE", entity_id=leave.id
@@ -107,13 +97,11 @@ def reject(
     leave_id: int, data: RejectIn, db: Session = Depends(get_db), user=Depends(current_user)
 ):
     leave = db.get(LeaveRequest, leave_id)
-    if not leave or not hs.can_act_on_leave(db, user, leave):
-        raise HTTPException(403, "Bu talebi reddetme yetkiniz yok")
+    if not leave:
+        raise HTTPException(404, "İzin talebi bulunamadı")
     b = balance(db, db.get(User, leave.user_id), leave.start_date.year)
     b.reserved_days = max(0, b.reserved_days - leave.working_days)
-    leave.status = "REJECTED"
-    leave.rejected_at = datetime.utcnow()
-    leave.rejection_reason = data.rejection_reason
+    workflow.reject_step(leave, user, data.rejection_reason)
     db.add(
         AuditLog(
             actor_user_id=user.id, action="LEAVE_REJECTED", entity_type="LEAVE", entity_id=leave.id
@@ -132,6 +120,9 @@ def cancel(leave_id: int, db: Session = Depends(get_db), user=Depends(current_us
     b.reserved_days = max(0, b.reserved_days - leave.working_days)
     b.used_days = max(0, b.used_days - (leave.working_days if leave.status == "APPROVED" else 0))
     leave.status = "CANCELLED"
+    for step in leave.approval_steps:
+        if step.status in ("PENDING", "WAITING"):
+            step.status = "SKIPPED"
     db.add(
         AuditLog(
             actor_user_id=user.id, action="LEAVE_CANCELLED", entity_type="LEAVE", entity_id=leave.id

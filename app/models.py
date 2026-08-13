@@ -34,6 +34,32 @@ class SystemRole(str, Enum):
     ADMIN = "ADMIN"
 
 
+class AdministrativeRoleType(str, Enum):
+    RECTOR = "RECTOR"
+    VICE_RECTOR = "VICE_RECTOR"
+    DEAN = "DEAN"
+    VICE_DEAN = "VICE_DEAN"
+    DEPARTMENT_HEAD = "DEPARTMENT_HEAD"
+    HR_DIRECTOR = "HR_DIRECTOR"
+    BOARD_CHAIRMAN = "BOARD_CHAIRMAN"
+    ADMIN = "ADMIN"
+
+
+class ApprovalStepType(str, Enum):
+    REVIEW = "REVIEW"
+    HR_CONTROL = "HR_CONTROL"
+    FINAL_APPROVAL = "FINAL_APPROVAL"
+    BOARD_DECISION = "BOARD_DECISION"
+
+
+class ApprovalStepStatus(str, Enum):
+    WAITING = "WAITING"
+    PENDING = "PENDING"
+    APPROVED = "APPROVED"
+    REJECTED = "REJECTED"
+    SKIPPED = "SKIPPED"
+
+
 class LeaveType(str, Enum):
     ANNUAL = "ANNUAL"
     EXCUSE = "EXCUSE"
@@ -92,10 +118,28 @@ class User(Base):
     updated_at: Mapped[datetime] = mapped_column(
         DateTime, default=datetime.utcnow, onupdate=datetime.utcnow
     )
+    administrative_roles: Mapped[list["UserAdministrativeRole"]] = relationship(
+        back_populates="user", cascade="all, delete-orphan"
+    )
 
     @property
     def full_name(self):
         return f"{self.first_name} {self.last_name}"
+
+
+class UserAdministrativeRole(Base):
+    __tablename__ = "user_administrative_roles"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    role_type: Mapped[AdministrativeRoleType] = mapped_column(String(40), index=True)
+    faculty_id: Mapped[int | None] = mapped_column(ForeignKey("faculties.id"), nullable=True)
+    department_id: Mapped[int | None] = mapped_column(ForeignKey("departments.id"), nullable=True)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True, index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, default=datetime.utcnow, onupdate=datetime.utcnow
+    )
+    user: Mapped[User] = relationship(back_populates="administrative_roles")
 
 
 class LeavePolicy(Base):
@@ -145,6 +189,31 @@ class LeaveRequest(Base):
     updated_at: Mapped[datetime] = mapped_column(
         DateTime, default=datetime.utcnow, onupdate=datetime.utcnow
     )
+    approval_steps: Mapped[list["LeaveApprovalStep"]] = relationship(
+        back_populates="leave_request",
+        cascade="all, delete-orphan",
+        order_by="LeaveApprovalStep.step_order",
+    )
+
+
+class LeaveApprovalStep(Base):
+    __tablename__ = "leave_approval_steps"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    leave_request_id: Mapped[int] = mapped_column(ForeignKey("leave_requests.id"), index=True)
+    step_order: Mapped[int] = mapped_column(Integer)
+    step_type: Mapped[ApprovalStepType] = mapped_column(String(40))
+    required_role: Mapped[AdministrativeRoleType] = mapped_column(String(40))
+    assigned_user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True)
+    status: Mapped[ApprovalStepStatus] = mapped_column(
+        String(20), default=ApprovalStepStatus.WAITING
+    )
+    comment: Mapped[str | None] = mapped_column(Text)
+    acted_at: Mapped[datetime | None] = mapped_column(DateTime)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, default=datetime.utcnow, onupdate=datetime.utcnow
+    )
+    leave_request: Mapped[LeaveRequest] = relationship(back_populates="approval_steps")
 
 
 class AuditLog(Base):

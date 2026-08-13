@@ -21,13 +21,28 @@ const titleMap = {
   OTHER: "Diğer",
 };
 const statusMap = {
-  PENDING: "Bekliyor",
+  WAITING: "Bekliyor",
+  PENDING: "Onay bekliyor",
   APPROVED: "Onaylandı",
   REJECTED: "Reddedildi",
+  SKIPPED: "Atlandı",
   CANCELLED: "İptal",
   AUTO_APPROVED: "Kayıtlandı",
 };
+const roleMap = {
+  DEPARTMENT_HEAD: "Bölüm Başkanı",
+  HR_DIRECTOR: "İK Daire Başkanı",
+  DEAN: "Dekan",
+  RECTOR: "Rektör",
+  VICE_RECTOR: "Rektör Yardımcısı",
+  BOARD_CHAIRMAN: "Mütevelli Heyet Başkanı",
+};
 let me;
+function canRole(role) {
+  return (me.administrative_roles || []).some(
+    (item) => item.role_type === role && item.is_active,
+  );
+}
 function initials(u) {
   return (u.first_name[0] + u.last_name[0]).toUpperCase();
 }
@@ -51,7 +66,10 @@ function renderLogin() {
     const visible = passwordInput.type === "text";
     passwordInput.type = visible ? "password" : "text";
     $("#toggle-password").textContent = visible ? "Görünür" : "Gizle";
-    $("#toggle-password").setAttribute("aria-label", visible ? "Şifreyi göster" : "Şifreyi gizle");
+    $("#toggle-password").setAttribute(
+      "aria-label",
+      visible ? "Şifreyi göster" : "Şifreyi gizle",
+    );
   };
   $("#login").onsubmit = async (e) => {
     e.preventDefault();
@@ -71,7 +89,7 @@ function renderLogin() {
   };
 }
 async function renderApp() {
-  document.body.innerHTML = `<div class="layout"><aside class="sidebar" id="side"><div class="logo">OTÜ İZİN<small>Akademik Personel Portalı</small></div><nav class="nav"><a href="#dashboard" class="active">▦ &nbsp; Dashboard</a><a href="#new">＋ &nbsp; İzin Talebi</a><a href="#leaves">▤ &nbsp; İzinlerim</a><a href="#calendar">◫ &nbsp; Takvim</a>${["DEPARTMENT_HEAD", "DEAN", "VICE_DEAN", "RECTOR", "VICE_RECTOR", "ADMIN"].includes(me.system_role) ? '<a href="#people">♙ &nbsp; Personel</a>' : ""}${["DEPARTMENT_HEAD", "DEAN", "VICE_DEAN", "RECTOR", "VICE_RECTOR"].includes(me.system_role) ? '<a href="#approvals">✓ &nbsp; Onay Bekleyenler</a>' : ""}<a href="#profile">◎ &nbsp; Profil</a><a href="#logout">↪ &nbsp; Çıkış</a></nav></aside><main class="main"><header class="topbar"><button class="mobile-menu ghost" onclick="$('#side').classList.toggle('open')">☰</button><strong>OSTİM Teknik Üniversitesi <span style="color:#9aa9bb">/ İzin Yönetim Sistemi</span></strong><div class="user-chip">${me.first_name} ${me.last_name} ${avatar(me)}</div></header><section class="content" id="view"></section></main></div>`;
+  document.body.innerHTML = `<div class="layout"><aside class="sidebar" id="side"><div class="logo">OTÜ İZİN<small>Akademik Personel Portalı</small></div><nav class="nav"><a href="#dashboard" class="active">▦ &nbsp; Dashboard</a><a href="#new">＋ &nbsp; İzin Talebi</a><a href="#leaves">▤ &nbsp; İzinlerim</a><a href="#calendar">◫ &nbsp; Takvim</a>${["DEPARTMENT_HEAD", "DEAN", "VICE_DEAN", "RECTOR", "VICE_RECTOR", "ADMIN"].some(canRole) ? '<a href="#people">♙ &nbsp; Personel</a>' : ""}${["DEPARTMENT_HEAD", "DEAN", "VICE_DEAN", "RECTOR", "VICE_RECTOR", "HR_DIRECTOR"].some(canRole) ? '<a href="#approvals">✓ &nbsp; Onay Bekleyenler</a>' : ""}<a href="#profile">◎ &nbsp; Profil</a><a href="#logout">↪ &nbsp; Çıkış</a></nav></aside><main class="main"><header class="topbar"><button class="mobile-menu ghost" onclick="$('#side').classList.toggle('open')">☰</button><strong>OSTİM Teknik Üniversitesi <span style="color:#9aa9bb">/ İzin Yönetim Sistemi</span></strong><div class="user-chip">${me.first_name} ${me.last_name} ${avatar(me)}</div></header><section class="content" id="view"></section></main></div>`;
   window.onhashchange = route;
   route();
 }
@@ -137,7 +155,20 @@ function newLeave() {
 async function leaves() {
   let rows = await api("/leaves/my");
   $("#view").innerHTML =
-    `<div class="eyebrow">Kayıtlar</div><h1 class="title">İzinlerim</h1><div class="card table-wrap"><table class="table"><thead><tr><th>Tarih</th><th>Tür</th><th>Süre</th><th>Durum</th><th></th></tr></thead><tbody>${rows.map((x) => `<tr><td>${fmt(x.start_date)} → ${fmt(x.end_date)}</td><td>Yıllık İzin</td><td>${x.working_days} gün</td><td><span class="badge ${x.status.toLowerCase()}">${statusMap[x.status]}</span></td><td>${x.status === "PENDING" ? `<button class="btn danger" onclick="cancelLeave(${x.id})">İptal</button>` : ""}</td></tr>`).join("") || '<tr><td colspan="5" class="empty">Henüz izin başvurunuz yok.</td></tr>'}</tbody></table></div>`;
+    `<div class="eyebrow">Kayıtlar</div><h1 class="title">İzinlerim</h1><div class="card table-wrap"><table class="table"><thead><tr><th>Tarih</th><th>Tür</th><th>Süre</th><th>Onay zinciri</th><th>Durum</th><th></th></tr></thead><tbody>${
+      rows
+        .map((x) => {
+          const chain = (x.approval_steps || [])
+            .map(
+              (s) =>
+                `<div class="approval-line"><span>${roleMap[s.required_role] || s.required_role}</span><span class="badge ${s.status.toLowerCase()}">${statusMap[s.status] || s.status}</span></div>`,
+            )
+            .join("");
+          return `<tr><td>${fmt(x.start_date)} → ${fmt(x.end_date)}</td><td>Yıllık İzin</td><td>${x.working_days} gün</td><td>${chain || "-"}</td><td><span class="badge ${x.status.toLowerCase()}">${statusMap[x.status]}</span></td><td>${x.status === "PENDING" ? `<button class="btn danger" onclick="cancelLeave(${x.id})">İptal</button>` : ""}</td></tr>`;
+        })
+        .join("") ||
+      '<tr><td colspan="6" class="empty">Henüz izin başvurunuz yok.</td></tr>'
+    }</tbody></table></div>`;
 }
 async function cancelLeave(id) {
   try {

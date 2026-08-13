@@ -337,6 +337,14 @@ textarea {
   color: var(--muted);
   font-size: 13px;
 }
+.approval-line {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-width: 190px;
+  margin: 3px 0;
+}
 .toast {
   position: fixed;
   right: 25px;

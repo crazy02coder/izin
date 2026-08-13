@@ -2,11 +2,12 @@
 The PDF reports 126 unique records; this curated starter set keeps the demo compact and
 can be extended by adding rows to PEOPLE (or importing the PDF rows in a deployment job)."""
 
-from datetime import date
+from datetime import date, datetime
 from sqlalchemy import select
 from app.database import Base, engine, SessionLocal
 from app.models import *
 from app.services.auth_service import hash_password
+from app.services.leave_workflow_service import LeaveWorkflowService
 from pathlib import Path
 from pypdf import PdfReader
 
@@ -270,6 +271,11 @@ ROLE_MAP = {
     "ACADEMIC": "ACADEMIC",
 }
 TITLE_LINES = set(TITLE) | {"Assist. Prof. Dr.", "Assist. Prof.", "Dr.", "Adjunct Instructor"}
+SPECIAL_USERS = [
+    ("Gülnaz", "Karaosmanoğlu", "gulnaz.karaosmanoglu@ostimteknik.edu.tr", "BOARD_CHAIRMAN"),
+    ("Orhan", "Aydın", "orhan.aydin@ostimteknik.edu.tr", "BOARD_CHAIRMAN"),
+    ("Esra", "Demirci", "esra.demirci@ostimteknik.edu.tr", "HR_DIRECTOR"),
+]
 
 
 def load_people_from_pdf():
@@ -409,6 +415,20 @@ def main():
             db.add(u)
             users.append((u, normalized))
             db.flush()
+        for first, last, email, role in SPECIAL_USERS:
+            normalized = f"{slug(first).lower()}.{slug(last).lower()}123"
+            u = User(
+                first_name=first,
+                last_name=last,
+                email=email,
+                password_hash=hash_password(normalized),
+                academic_title=AcademicTitle.OTHER,
+                system_role="ADMIN",
+                must_change_password=False,
+            )
+            db.add(u)
+            db.flush()
+            users.append((u, normalized))
         for u, _ in users:
             if u.system_role == SystemRole.DEAN:
                 faculties[
@@ -421,6 +441,31 @@ def main():
                         next(k for k, v in depts.items() if v.id == u.department_id)[1],
                     )
                 ].department_head_user_id = u.id
+        for row in people:
+            fac, dep, _, _, role, _ = row[:6]
+            if role in ROLE_MAP.values() and role != "ACADEMIC":
+                first = row[3].split()[0]
+                last = " ".join(row[3].split()[1:]) or first
+                owner = db.scalar(
+                    select(User).where(
+                        User.first_name == first,
+                        User.last_name == last,
+                        User.department_id == depts[(fac, dep)].id,
+                    )
+                )
+                if owner:
+                    db.add(
+                        UserAdministrativeRole(
+                            user_id=owner.id,
+                            role_type=role,
+                            faculty_id=faculties[fac].id,
+                            department_id=depts[(fac, dep)].id,
+                        )
+                    )
+        for first, last, email, role in SPECIAL_USERS:
+            owner = db.scalar(select(User).where(User.email == email))
+            db.add(UserAdministrativeRole(user_id=owner.id, role_type=role))
+        db.flush()
         for t, n in [
             (AcademicTitle.PROFESSOR, 30),
             (AcademicTitle.ASSOCIATE_PROFESSOR, 25),
@@ -463,22 +508,23 @@ def main():
                     (start.replace(day=start.day + i).weekday() < 5)
                     for i in range((end - start).days + 1)
                 )
-                approver = (
-                    __import__("app.services.hierarchy_service", fromlist=["HierarchyService"])
-                    .HierarchyService()
-                    .approver(db, owner)
+                leave = LeaveRequest(
+                    user_id=owner.id,
+                    leave_type=LeaveType.ANNUAL,
+                    start_date=start,
+                    end_date=end,
+                    working_days=days,
+                    status=status,
                 )
-                db.add(
-                    LeaveRequest(
-                        user_id=owner.id,
-                        leave_type=LeaveType.ANNUAL,
-                        start_date=start,
-                        end_date=end,
-                        working_days=days,
-                        status=status,
-                        approver_id=approver.id if approver else None,
-                    )
+                db.add(leave)
+                db.flush()
+                leave.approval_steps = LeaveWorkflowService().build_workflow(
+                    db, owner, LeaveType.ANNUAL
                 )
+                if status == "APPROVED":
+                    for step in leave.approval_steps:
+                        step.status = "APPROVED"
+                        step.acted_at = datetime.utcnow()
                 bal = db.scalar(
                     select(LeaveBalance).where(
                         LeaveBalance.user_id == owner.id, LeaveBalance.year == 2026
