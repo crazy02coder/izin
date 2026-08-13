@@ -29,6 +29,13 @@ class LeaveWorkflowService:
             definitions = [(AdministrativeRoleType.BOARD_CHAIRMAN, ApprovalStepType.BOARD_DECISION)]
         elif highest in (AdministrativeRoleType.VICE_RECTOR, AdministrativeRoleType.DEAN):
             definitions = [(AdministrativeRoleType.RECTOR, ApprovalStepType.FINAL_APPROVAL)]
+        elif highest == AdministrativeRoleType.DEPARTMENT_HEAD:
+            # A department head cannot approve their own leave. The department
+            # review step is therefore omitted for this applicant.
+            definitions = [
+                (AdministrativeRoleType.HR_DIRECTOR, ApprovalStepType.HR_CONTROL),
+                (AdministrativeRoleType.DEAN, ApprovalStepType.FINAL_APPROVAL),
+            ]
         elif leave_type == LeaveType.ANNUAL:
             definitions = [
                 (AdministrativeRoleType.DEPARTMENT_HEAD, ApprovalStepType.REVIEW),
