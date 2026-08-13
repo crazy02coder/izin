@@ -1,0 +1,15 @@
+.git
+.gitignore
+.venv
+venv
+__pycache__
+*.py[cod]
+*.sqlite
+*.db
+*.db-*
+.env
+.DS_Store
+*.backup
+tmp
+tests
+
