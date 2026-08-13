@@ -1,4 +1,3 @@
-from logging.config import fileConfig
 from sqlalchemy import engine_from_config, pool
 from alembic import context
 from app.database import Base
@@ -6,8 +5,6 @@ from app import models
 from app.config import settings
 
 config = context.config
-if config.config_file_name:
-    fileConfig(config.config_file_name)
 target_metadata = Base.metadata
 
 
