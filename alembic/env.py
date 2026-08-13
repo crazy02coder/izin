@@ -3,6 +3,7 @@ from sqlalchemy import engine_from_config, pool
 from alembic import context
 from app.database import Base
 from app import models
+from app.config import settings
 
 config = context.config
 if config.config_file_name:
@@ -12,7 +13,7 @@ target_metadata = Base.metadata
 
 def run_migrations_offline():
     context.configure(
-        url=config.get_main_option("sqlalchemy.url"),
+        url=settings.database_url,
         target_metadata=target_metadata,
         literal_binds=True,
         compare_type=True,
@@ -22,8 +23,10 @@ def run_migrations_offline():
 
 
 def run_migrations_online():
+    database_config = config.get_section(config.config_ini_section, {})
+    database_config["sqlalchemy.url"] = settings.database_url
     connectable = engine_from_config(
-        config.get_section(config.config_ini_section, {}),
+        database_config,
         prefix="sqlalchemy.",
         poolclass=pool.NullPool,
     )
