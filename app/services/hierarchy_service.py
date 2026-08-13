@@ -75,13 +75,19 @@ class HierarchyService:
             query = query.where(UserAdministrativeRole.department_id == department_id)
         elif faculty_id is not None:
             query = query.where(UserAdministrativeRole.faculty_id == faculty_id)
-        else:
-            query = query.where(
-                UserAdministrativeRole.faculty_id.is_(None),
-                UserAdministrativeRole.department_id.is_(None),
-            )
+        # No scope means a university-wide role. Legacy rows may contain
+        # copied faculty/department values, so they must still be eligible.
         role = db.scalar(query)
-        return db.get(User, role.user_id) if role else None
+        if role:
+            return db.get(User, role.user_id)
+        # Backward compatibility for databases seeded before the role table
+        # was introduced.
+        return db.scalar(
+            select(User).where(
+                User.system_role == role_type.value,
+                User.is_active.is_(True),
+            )
+        )
 
     def faculty_id_for(self, db, user):
         role = self.get_highest_priority_role(user)
@@ -103,6 +109,8 @@ class HierarchyService:
         if role in (
             AdministrativeRoleType.RECTOR,
             AdministrativeRoleType.VICE_RECTOR,
+            AdministrativeRoleType.HR_DIRECTOR,
+            AdministrativeRoleType.BOARD_CHAIRMAN,
             AdministrativeRoleType.ADMIN,
         ):
             return list(db.scalars(q.order_by(User.last_name, User.first_name)))
