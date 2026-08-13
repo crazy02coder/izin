@@ -54,6 +54,9 @@ function renderLogin() {
         body: JSON.stringify(Object.fromEntries(new FormData(e.target))),
       });
       me = d.user;
+      if (location.hash === "#logout") {
+        history.replaceState(null, "", "#dashboard");
+      }
       renderApp();
     } catch (x) {
       toast(x.message);
