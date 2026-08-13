@@ -80,6 +80,27 @@ textarea {
   background: #fff;
   color: var(--ink);
 }
+.password-field {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+.password-field input {
+  padding-right: 92px;
+}
+.password-toggle {
+  position: absolute;
+  right: 10px;
+  padding: 7px 9px;
+  border-radius: 7px;
+  background: #e8f1ff;
+  color: var(--blue);
+  font-size: 12px;
+  font-weight: 800;
+}
+.password-toggle:hover {
+  background: #d7e7ff;
+}
 .btn {
   padding: 11px 16px;
   border-radius: 10px;

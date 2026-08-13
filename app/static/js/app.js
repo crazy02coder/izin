@@ -45,7 +45,14 @@ function toast(t) {
   setTimeout(() => x.remove(), 3200);
 }
 function renderLogin() {
-  document.body.innerHTML = `<main class="login"><form class="login-card" id="login"><div class="brand-mark">OTÜ</div><h1>İzin Yönetim Portalı</h1><p>OSTİM Teknik Üniversitesi akademik personel sistemi</p><label>E-posta</label><input name="email" type="email" required placeholder="ad.soyad@ostimteknik.edu.tr"><label>Şifre</label><input name="password" type="password" required placeholder="FirstName.lastName123"><button class="btn primary" style="width:100%;margin-top:24px">Giriş yap</button><p style="font-size:12px;margin-top:20px">Demo ortamı: Serdar Müldür / Serdar.muldur123</p></form></main>`;
+  document.body.innerHTML = `<main class="login"><form class="login-card" id="login"><div class="brand-mark">OTÜ</div><h1>İzin Yönetim Portalı</h1><p>OSTİM Teknik Üniversitesi akademik personel sistemi</p><label>E-posta</label><input name="email" type="email" required placeholder="ad.soyad@ostimteknik.edu.tr"><label>Şifre</label><div class="password-field"><input id="login-password" name="password" type="password" required placeholder="FirstName.lastName123"><button type="button" class="password-toggle" id="toggle-password" aria-label="Şifreyi göster">Görünür</button></div><button class="btn primary" style="width:100%;margin-top:24px">Giriş yap</button><p style="font-size:12px;margin-top:20px">Demo ortamı: Serdar Müldür / Serdar.muldur123</p></form></main>`;
+  const passwordInput = $("#login-password");
+  $("#toggle-password").onclick = () => {
+    const visible = passwordInput.type === "text";
+    passwordInput.type = visible ? "password" : "text";
+    $("#toggle-password").textContent = visible ? "Görünür" : "Gizle";
+    $("#toggle-password").setAttribute("aria-label", visible ? "Şifreyi göster" : "Şifreyi gizle");
+  };
   $("#login").onsubmit = async (e) => {
     e.preventDefault();
     try {
